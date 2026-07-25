@@ -189,6 +189,62 @@ function reducer(state, action) {
       return { ...state, frames, currentLayer: state.currentLayer + action.dir };
     }
 
+    case 'SET_PIXEL': {
+      const { x, y, color: c } = action;
+      const frames = state.frames.map((f, fi) => {
+        if (fi !== state.currentFrame) return f;
+        const layers = f.layers.map((l, li) => {
+          if (li !== state.currentLayer) return l;
+          const w = state.canvasWidth, h = state.canvasHeight;
+          let data = l.data ? new Uint8ClampedArray(l.data) : new Uint8ClampedArray(w * h * 4);
+          const i = (y * w + x) * 4;
+          if (c === 'erase') {
+            data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
+          } else {
+            const rgb = hexToRgb(c);
+            data[i] = rgb.r; data[i + 1] = rgb.g; data[i + 2] = rgb.b; data[i + 3] = 255;
+          }
+          return { ...l, data };
+        });
+        return { ...f, layers };
+      });
+      return { ...state, frames };
+    }
+
+    case 'FILL_AREA': {
+      const { x, y, color: c2 } = action;
+      const frames = state.frames.map((f, fi) => {
+        if (fi !== state.currentFrame) return f;
+        const layers = f.layers.map((l, li) => {
+          if (li !== state.currentLayer) return l;
+          const w = state.canvasWidth, h = state.canvasHeight;
+          let data = l.data ? new Uint8ClampedArray(l.data) : new Uint8ClampedArray(w * h * 4);
+          const target = getPixel(data, w, x, y);
+          const fill = c2 === 'erase' ? [0, 0, 0, 0] : [...Object.values(hexToRgb(c2)), 255];
+          if (colorsMatch(target, fill)) return { ...l, data };
+          const stack = [[x, y]];
+          const visited = new Set();
+          while (stack.length) {
+            const [cx, cy] = stack.pop();
+            const key = cy * w + cx;
+            if (visited.has(key)) continue;
+            visited.add(key);
+            const cur = getPixel(data, w, cx, cy);
+            if (!colorsMatch(cur, target)) continue;
+            const i = key * 4;
+            data[i] = fill[0]; data[i + 1] = fill[1]; data[i + 2] = fill[2]; data[i + 3] = fill[3];
+            if (cx > 0) stack.push([cx - 1, cy]);
+            if (cx < w - 1) stack.push([cx + 1, cy]);
+            if (cy > 0) stack.push([cx, cy - 1]);
+            if (cy < h - 1) stack.push([cx, cy + 1]);
+          }
+          return { ...l, data };
+        });
+        return { ...f, layers };
+      });
+      return { ...state, frames };
+    }
+
     case 'COMMIT_SHAPE': {
       const { layerIdx, data } = action;
       const frames = state.frames.map((f, fi) => {
